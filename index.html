@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>FCC: Heatmap Project</title>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔥</text></svg>">
+  <style>
+    :root {
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #title {
+      font-size: xx-large;
+      text-align: center;
+    }
+
+    #description {
+      font-size: large;
+      text-align: center;
+    }
+
+    #vis-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #tooltip {
+      background-color: darkslategray;
+      border-radius: 6px;
+      padding: 1em;
+      color: white;
+      position: absolute;
+    }
+  </style>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
+</head>
+
+<body>
+  <script>
+    let dataURL = "https://raw.githubusercontent.com/freeCodeCamp/ProjectReferenceData/master/global-temperature.json";
+    let fccScriptURL = "https://cdn.freecodecamp.org/testable-projects-fcc/v1/bundle.js";
+    let margin = { top: 30, right: 30, bottom: 30, left: 60 };
+    let width = 1600 - margin.left - margin.right;
+    let height = 400 - margin.top - margin.bottom;
+
+    /* color array from https://colorbrewer2.org/ */
+    let colorArray = ['#67001f', '#b2182b', '#d6604d', '#f4a582', '#fddbc7', '#d1e5f0', '#92c5de', '#4393c3', '#2166ac', '#053061'];
+
+    /* Add container div */
+    d3.select("body")
+      .append("div")
+      .attr("id", "vis-container");
+
+    /* Title */
+    d3.select("#vis-container")
+      .append("div")
+      .attr("class", "title-block")
+      .append("div")
+      .attr("id", "title")
+      .text("Monthly Global Temperatures");
+
+    /* Add svg */
+    let svg = d3.select("#vis-container")
+      .append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom + 200)
+      .append("g")
+      .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+    /* Add tooltip */
+    let toolTip = d3.select("#vis-container")
+      .append("div")
+      .attr("id", "tooltip")
+      .style("opacity", 0);
+
+    /* Retrieve and plot data */
+    d3.json(dataURL).then((data, error) => {
+      if (error) throw error;
+
+      data.monthlyVariance.map(item => {
+        item.month -= 1;
+      });
+
+      d3.select(".title-block")
+        .append("div")
+        .attr("id", "description")
+        .html(`<strong>1753-2015 Base Temperature:</strong>&nbsp;${data.baseTemperature}&#8451;`);
+
+      let yearArray = data.monthlyVariance.map(item => {
+        return item.year;
+      }).filter((year, index, self) => {
+        return self.indexOf(year) === index;
+      })
+
+      /* Create x-axis */
+      let xScale = d3
+        .scaleTime()
+        .domain(d3.extent(data.monthlyVariance, d => {
+          return d.year;
+        }))
+        .range([0, width])
+      /* Create y-axis */
+      let yScale = d3
+        .scaleBand()
+        .domain([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+        .range([0, height]);
+
+      let colors = d3
+        .scaleLinear()
+        .domain(d3.range(3, 14, 1))
+        .range(colorArray.reverse())
+
+      /* Add axes to graph */
+      svg
+        .append("g")
+        .attr("id", "x-axis")
+        .attr("transform", "translate(0," + height + ")")
+        .call(d3.axisBottom(xScale).tickFormat(d3.format("Y")));
+      svg.append("g")
+        .attr("id", "y-axis")
+        .call(d3.axisLeft(yScale)
+          .tickValues(yScale.domain())
+          .tickFormat(month => {
+            return getMonthName(month);
+          }));
+
+      /* Add rectangles to heatmap */
+      svg.append("g")
+        .selectAll(".cell")
+        .data(data.monthlyVariance)
+        .enter()
+        .append("rect")
+        .attr("class", "cell")
+        .attr("data-month", d => {
+          return d.month;
+        })
+        .attr("data-year", d => {
+          return d.year;
+        })
+        .attr("data-temp", d => {
+          return d.variance + data.baseTemperature;
+        })
+        .attr("x", d => {
+          return xScale(d.year);
+        })
+        .attr("y", d => {
+          return yScale(d.month);
+        })
+        .attr("height", height / 12)
+        .attr("width", width / yearArray.length)
+        .style("fill", d => {
+          return colors(data.baseTemperature + d.variance)
+        })
+        .on("mouseover", d => {
+          toolTip.transition().duration(50).style("opacity", 0.9);
+          toolTip.html(`<strong>${getMonthName(d.month)},&nbsp;${d.year}</strong><br><br>
+          <strong>Temperature:</strong>&nbsp;${(data.baseTemperature + d.variance).toFixed(2)}&#8451;`)
+            .style("top", (d3.event.pageY - 15) + "px")
+            .style("left", (d3.event.pageX + 28) + "px")
+            .style("z-index", 5)
+            .attr("data-year", d.year);
+        })
+        .on("mouseout", d => {
+          toolTip.transition().duration(50).style("opacity", 0).style("z-index", -1);
+        });
+
+      /* Add legend */
+      let legendContainer = svg.append("g")
+        .attr("id", "legend")
+        .attr("transform", `translate(0, ${margin.top + height + margin.bottom})`);
+
+      let legendHeight = 25;
+      let legendWidth = 30;
+
+      let legend = legendContainer
+        .selectAll("#legend")
+        .data(colorArray)
+        .enter()
+        .append("rect")
+        .attr("class", "legend-label")
+        .attr("width", legendWidth + "px")
+        .attr("height", legendHeight + "px")
+        .style("fill", color => {
+          return color;
+        })
+        .attr("transform", (d, i) => {
+          return `translate(${i * legendWidth}, 0)`;
+        });
+    });
+
+    /* Add FCC Script */
+    d3.select("body")
+      .append("script")
+      .attr("src", fccScriptURL);
+
+    function getMonthName(month) {
+      return d3.timeFormat("%B")(new Date(0).setUTCMonth(month + 1));
+    }
+  </script>
+</body>
+
+</html>
